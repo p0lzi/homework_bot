@@ -94,8 +94,7 @@ def parse_status(homework):
 
 
 def check_tokens():
-    """Checks the availability of environment variables.
-    """
+    """Checks the availability of environment variables."""
     if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID and PRACTICUM_TOKEN:
         return True
     logging.critical("Отсутствует обязательные переменные окружения.")
