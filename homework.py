@@ -21,43 +21,6 @@ HOMEWORK_STATUSES = {
 }
 
 # Common logger configuration
-LOGGING_CONFIG = {
-    'version': 1,
-    'disable_existing_loggers': False,
-
-    'formatters': {
-        'default_formatter': {
-            'format': "%(asctime)s [%(levelname)s]\t%(message)s"
-        },
-    },
-
-    'handlers': {
-        'stream_handler': {
-            'class': 'logging.StreamHandler',
-            'formatter': 'default_formatter',
-        },
-        'file_handler': {
-            'class': 'logging.FileHandler',
-            'formatter': 'default_formatter',
-            'filename': 'homework.log'
-        },
-        'telegram_handler': {
-            'class': f'{__name__}.TelegramBotHandler',
-            'level': 'DEBUG',
-            'chat_id': TELEGRAM_CHAT_ID,
-            'token': TELEGRAM_TOKEN,
-            'formatter': 'default_formatter',
-        }
-    },
-    'loggers': {
-        __name__: {
-            'handlers': ['stream_handler', 'file_handler', 'telegram_handler'],
-            'level': 'DEBUG',
-            'propagate': True
-        }
-    }
-}
-# logging.config.dictConfig(LOGGING_CONFIG)
 logging.config.fileConfig('log/log.conf')
 logger = logging.getLogger('root')
 
@@ -84,7 +47,9 @@ def get_api_answer(current_timestamp):
         elif request.status_code == HTTPStatus.INTERNAL_SERVER_ERROR:
             logging.error(f"Ошибка работы эндпоинта {ENDPOINT}")
         else:
-            logging.error(f"Ошибка {request.status_code} эндпоинта {ENDPOINT}.")
+            logging.error(
+                f"Ошибка {request.status_code} эндпоинта {ENDPOINT}."
+            )
         raise GetNot200APIAnswer(
             f"Ошибка {request.status_code} эндпоинта {ENDPOINT}."
         )
@@ -95,7 +60,8 @@ def check_response(response):
     """Checks the API response for correctness."""
     if not isinstance(response, dict):
         raise TypeError("Ответ от API имеет некорректный тип.")
-    elif not (homeworks := response.get('homeworks')):
+    homeworks = response.get('homeworks')
+    if not homeworks:
         logging.error(f"Отсутствие ключа 'homeworks' в ответе API.")
         raise CheckResponseNoHomeworks(
             "Отсутствие ключа 'homeworks' в ответе API."
@@ -110,13 +76,16 @@ def check_response(response):
 
 def parse_status(homework):
     """Gets status about specific homework."""
-    if not (homework_name := homework.get('homework_name')):
+    homework_name = homework.get('homework_name')
+    homework_status = homework.get('status')
+    verdict = HOMEWORK_STATUSES.setdefault(homework_status)
+    if not homework_name:
         logging.error(f"Отсутствие ключа 'homework_name' в ответе API.")
         raise KeyError("Отсутствие ключа 'homework_name' в ответе API.")
-    if not (homework_status := homework.get('status')):
+    if not homework_status:
         logging.error(f"Отсутствие ключа 'status' в ответе API.")
         raise KeyError("Отсутствие ключа 'status' в ответе API.")
-    if not (verdict := HOMEWORK_STATUSES.setdefault(homework_status)):
+    if not verdict:
         logging.error(("Недокументированный статус домашней работы, "
                        "обнаруженный в ответе API."))
         raise ParseStatusUnknownStatus(
@@ -141,7 +110,8 @@ def main():
         try:
             current_timestamp = int(time.time())
             response = get_api_answer(current_timestamp)
-            if homeworks := check_response(response):
+            homeworks = check_response(response)
+            if homeworks:
                 for homework in homeworks:
                     send_message(bot, parse_status(homework))
             else:
