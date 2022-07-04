@@ -12,4 +12,3 @@ class CheckResponseNoHomeworks(Exception):
 
 class CheckResponseHomeworksNotInList(Exception):
     pass
-
