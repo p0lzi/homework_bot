@@ -1,44 +1,65 @@
 import logging
-import os
+import logging.config
 import time
 from http import HTTPStatus
 
 import requests
 import telegram
-from dotenv import load_dotenv
-
-load_dotenv()
-
-log_format = "%(asctime)s [%(levelname)s]\t%(message)s"
-
-logging.basicConfig(
-    format=log_format,
-    level=logging.DEBUG,
-    filename='homework.log',
-    filemode='w'
-)
-
-stream_handler = logging.StreamHandler()
-stream_handler.setLevel(logging.INFO)
-stream_handler.setFormatter(logging.Formatter(log_format))
-logger = logging.getLogger(__name__)
-logger.addHandler(stream_handler)
-
-PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
-TELEGRAM_TOKEN = os.getenv('TOKEN')
-TELEGRAM_CHAT_ID = os.getenv('MY_CHAT_ID')
-
+from exceptions import (
+    CheckResponseHomeworksNotInList, CheckResponseNoHomeworks,
+    GetNot200APIAnswer, ParseStatusUnknownStatus)
+from setting import PRACTICUM_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_TOKEN
 
 RETRY_TIME = 600
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
-
 
 HOMEWORK_STATUSES = {
     'approved': 'Работа проверена: ревьюеру всё понравилось. Ура!',
     'reviewing': 'Работа взята на проверку ревьюером.',
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
 }
+
+# Common logger configuration
+LOGGING_CONFIG = {
+    'version': 1,
+    'disable_existing_loggers': False,
+
+    'formatters': {
+        'default_formatter': {
+            'format': "%(asctime)s [%(levelname)s]\t%(message)s"
+        },
+    },
+
+    'handlers': {
+        'stream_handler': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'default_formatter',
+        },
+        'file_handler': {
+            'class': 'logging.FileHandler',
+            'formatter': 'default_formatter',
+            'filename': 'homework.log'
+        },
+        'telegram_handler': {
+            'class': f'{__name__}.TelegramBotHandler',
+            'level': 'DEBUG',
+            'chat_id': TELEGRAM_CHAT_ID,
+            'token': TELEGRAM_TOKEN,
+            'formatter': 'default_formatter',
+        }
+    },
+    'loggers': {
+        __name__: {
+            'handlers': ['stream_handler', 'file_handler', 'telegram_handler'],
+            'level': 'DEBUG',
+            'propagate': True
+        }
+    }
+}
+# logging.config.dictConfig(LOGGING_CONFIG)
+logging.config.fileConfig('log/log.conf')
+logger = logging.getLogger('root')
 
 
 def send_message(bot, message):
@@ -53,33 +74,54 @@ def send_message(bot, message):
 def get_api_answer(current_timestamp):
     """Makes a request to the only endpoint of the API service."""
     timestamp = current_timestamp or int(time.time())
+    # timestamp = 0
     params = {'from_date': timestamp}
     request = requests.get(ENDPOINT, headers=HEADERS, params=params)
-    if request.status_code == HTTPStatus.NOT_FOUND:
-        logging.error(f"Недоступен эндпоинта {ENDPOINT}")
-    elif request.status_code == HTTPStatus.INTERNAL_SERVER_ERROR:
-        logging.error(f"Ошибка работы эндпоинта {ENDPOINT}")
-    elif request.status_code != HTTPStatus.OK:
-        logging.error(f"Ошибка {request.status_code} эндпоинта {ENDPOINT}.")
+
+    if request.status_code != HTTPStatus.OK:
+        if request.status_code == HTTPStatus.NOT_FOUND:
+            logging.error(f"Недоступен эндпоинта {ENDPOINT}")
+        elif request.status_code == HTTPStatus.INTERNAL_SERVER_ERROR:
+            logging.error(f"Ошибка работы эндпоинта {ENDPOINT}")
+        else:
+            logging.error(f"Ошибка {request.status_code} эндпоинта {ENDPOINT}.")
+        raise GetNot200APIAnswer(
+            f"Ошибка {request.status_code} эндпоинта {ENDPOINT}."
+        )
     return request.json()
 
 
 def check_response(response):
     """Checks the API response for correctness."""
-    if not (homeworks := response.setdefault('homeworks')):
+    if not isinstance(response, dict):
+        raise TypeError("Ответ от API имеет некорректный тип.")
+    elif not (homeworks := response.get('homeworks')):
         logging.error(f"Отсутствие ключа 'homeworks' в ответе API.")
+        raise CheckResponseNoHomeworks(
+            "Отсутствие ключа 'homeworks' в ответе API."
+        )
+    elif not isinstance(homeworks, list):
+        raise CheckResponseHomeworksNotInList(
+            ("Ключ 'homeworks' в ответе от API домашняя работа приходят"
+             "не в виде списка")
+        )
     return homeworks
 
 
 def parse_status(homework):
     """Gets status about specific homework."""
-    if not (homework_name := homework.setdefault('lesson_name')):
-        logging.error(f"Отсутствие ключа 'lesson_name' в ответе API.")
-    if not (homework_status := homework.setdefault('status')):
+    if not (homework_name := homework.get('homework_name')):
+        logging.error(f"Отсутствие ключа 'homework_name' в ответе API.")
+        raise KeyError("Отсутствие ключа 'homework_name' в ответе API.")
+    if not (homework_status := homework.get('status')):
         logging.error(f"Отсутствие ключа 'status' в ответе API.")
+        raise KeyError("Отсутствие ключа 'status' в ответе API.")
     if not (verdict := HOMEWORK_STATUSES.setdefault(homework_status)):
         logging.error(("Недокументированный статус домашней работы, "
                        "обнаруженный в ответе API."))
+        raise ParseStatusUnknownStatus(
+            "Недокументированный статус домашней работы в ответе от API"
+        )
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
@@ -105,9 +147,10 @@ def main():
             else:
                 logging.debug("В ответе нет новых статусов.")
             time.sleep(RETRY_TIME)
-        except Exception as error:
-            message = f'Сбой в работе программы: {error}'
-            logging.error(message)
+        except KeyError:
+            logging.exception("Отсутствие ключа в ответе API.")
+        except Exception:
+            logging.exception("Сбой в работе программы")
             time.sleep(RETRY_TIME)
         else:
             logging.debug("Цикл отработан без исключений")
