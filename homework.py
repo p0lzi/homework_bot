@@ -26,8 +26,7 @@ logger = logging.getLogger('root')
 
 
 def send_message(bot, message):
-    """Sends a message to the Telegram chat defined by the TELEGRAM_CHAT_ID
-    environment variable"""
+    """Sends a message to the Telegram chat."""
     if bot.sendMessage(chat_id=TELEGRAM_CHAT_ID, text=message):
         logging.info("Успешная отправка сообщения в Telegram.")
     else:
@@ -62,7 +61,7 @@ def check_response(response):
         raise TypeError("Ответ от API имеет некорректный тип.")
     homeworks = response.get('homeworks')
     if not homeworks:
-        logging.error(f"Отсутствие ключа 'homeworks' в ответе API.")
+        logging.error("Отсутствие ключа 'homeworks' в ответе API.")
         raise CheckResponseNoHomeworks(
             "Отсутствие ключа 'homeworks' в ответе API."
         )
@@ -80,10 +79,10 @@ def parse_status(homework):
     homework_status = homework.get('status')
     verdict = HOMEWORK_STATUSES.setdefault(homework_status)
     if not homework_name:
-        logging.error(f"Отсутствие ключа 'homework_name' в ответе API.")
+        logging.error("Отсутствие ключа 'homework_name' в ответе API.")
         raise KeyError("Отсутствие ключа 'homework_name' в ответе API.")
     if not homework_status:
-        logging.error(f"Отсутствие ключа 'status' в ответе API.")
+        logging.error("Отсутствие ключа 'status' в ответе API.")
         raise KeyError("Отсутствие ключа 'status' в ответе API.")
     if not verdict:
         logging.error(("Недокументированный статус домашней работы, "
@@ -95,8 +94,8 @@ def parse_status(homework):
 
 
 def check_tokens():
-    """Checks the availability of environment variables that are necessary
-    for work."""
+    """Checks the availability of environment variables.
+    """
     if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID and PRACTICUM_TOKEN:
         return True
     logging.critical("Отсутствует обязательные переменные окружения.")
