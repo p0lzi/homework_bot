@@ -1,14 +1,15 @@
-class GetNot200APIAnswer(Exception):
+# В задании было сказано про отправку всех логов уровня ERROR.
+class IncorrectAnswerFromAPI(Exception):
     pass
 
 
-class ParseStatusUnknownStatus(Exception):
+class APIConnectionError(Exception):
     pass
 
 
-class CheckResponseNoHomeworks(Exception):
+class EmptyResponseFromAPI(Exception):
     pass
 
 
-class CheckResponseHomeworksNotInList(Exception):
+class TelegramConnectionError(Exception):
     pass
