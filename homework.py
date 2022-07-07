@@ -3,7 +3,6 @@ import logging.config
 import sys
 import time
 from http import HTTPStatus
-
 import requests
 import telegram
 from exceptions import (
@@ -25,7 +24,7 @@ VERDICTS = {
 console_handler = logging.StreamHandler()
 file_handler = logging.FileHandler(
     filename='homework.log',
-    mode='w',
+    mode='a',
     encoding='cp1251'
 )
 logging.basicConfig(
@@ -46,15 +45,12 @@ def send_message(bot, message):
         logging.info("Успешная отправка сообщения в Telegram.")
 
 
-def get_api_answer(some_timestamp):
+def get_api_answer(current_timestamp):
     """Makes a request to the only endpoint of the API service."""
-    timestamp_minus_10 = int(time.time()) - 60 * 10
-    from_date = (timestamp_minus_10 if some_timestamp < timestamp_minus_10
-                 else timestamp_minus_10)
     request_kwargs = {'url': ENDPOINT,
                       'headers': HEADERS,
                       'params': {
-                          'from_date': from_date
+                          'from_date': current_timestamp or int(time.time())
                       }}
     logging.info(
         ("Запрос к API \nurl= {url}\nheaders= {headers}"
@@ -78,7 +74,7 @@ def get_api_answer(some_timestamp):
             (
                 "Ошибка подключение к API\nerror= {error_message}\n"
                 "url= {url}\nheaders= {headers}\nparams= {params}")
-            .format(error_message, **request_kwargs)
+            .format(error_message=error_message, **request_kwargs)
         )
 
 
@@ -139,22 +135,20 @@ def main():
         sys.exit("Отсутствует обязательные переменные окружения.")
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     prev_message = ''
-    timestamp_minus_10 = int(time.time()) - 10 * 60
+    current_timestamp = int(time.time())
     while True:
         try:
-
-            response = get_api_answer(timestamp_minus_10)
+            response = get_api_answer(current_timestamp)
             homeworks = check_response(response)
             if homeworks:
-                for homework in homeworks:
-                    message = parse_status(homework)
-                    if message != prev_message:
-                        send_message(bot, message)
-                        prev_message = message
-                    else:
-                        logging.debug(
-                            ("Сообщение не отправлено в Телеграмм, "
-                             "было отправлено ранее"))
+                message = parse_status(homeworks.pop(0))
+                if message != prev_message:
+                    send_message(bot, message)
+                    prev_message = message
+                else:
+                    logging.debug(
+                        ("Сообщение не отправлено в Телеграмм, "
+                         "было отправлено ранее"))
             else:
                 logging.debug("В ответе нет новых статусов.")
         except NotForwardingInTelegram as error_message:
