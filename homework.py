@@ -4,11 +4,11 @@ import sys
 import time
 from http import HTTPStatus
 
-import handlers
 import requests
 import telegram
 from exceptions import (
-    APIConnectionError, IncorrectAnswerFromAPI, TelegramConnectionError)
+    APIConnectionError, ForwardingInTelegram, IncorrectAnswerFromAPI,
+    NotForwardingInTelegram, TelegramConnectionError)
 from setting import PRACTICUM_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_TOKEN
 
 RETRY_TIME = 600
@@ -28,10 +28,8 @@ file_handler = logging.FileHandler(
     mode='w',
     encoding='cp1251'
 )
-telegram_handler = handlers.TelegramBotHandler()
-telegram_handler.setLevel(logging.ERROR)
 logging.basicConfig(
-    handlers=(console_handler, file_handler, telegram_handler),
+    handlers=(console_handler, file_handler),
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(lineno)d %(message)s'
 )
@@ -64,7 +62,7 @@ def get_api_answer(current_timestamp):
         if response.status_code != HTTPStatus.OK:
             raise IncorrectAnswerFromAPI(
                 ("Неверный ответ от API:\nstatus_code= {status}\n"
-                 "status_text= {statusText}\ntext= {response.text}")
+                 "status_text= {status_text}\ntext= {text}")
                 .format(
                     status=response.status_code,
                     status_text=response.reason,
@@ -138,8 +136,6 @@ def main():
         sys.exit("Отсутствует обязательные переменные окружения.")
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     current_timestamp = int(time.time())
-    # Решил использовать переменную str так, как на выходе функции
-    # parse_status строка (подготовленное сообщение для отправки в Telegram)
     prev_message = ''
     while True:
         try:
@@ -157,12 +153,12 @@ def main():
                              "было отправлено ранее"))
             else:
                 logging.debug("В ответе нет новых статусов.")
-        # У меня отправка логов в Telegram организовано на уровне logging
-        # в TelegramBotHandler туда отправляется все сообщение уровня ERROR
-        # и выше
+        except NotForwardingInTelegram as error_message:
+            logging.exception(error_message)
+        except ForwardingInTelegram as error_message:
+            logging.exception(error_message)
+            send_message(bot, error_message)
         except Exception as error_message:
-            # Проверка отправки повторных сообщений об ошибках в модуле
-            # handlers в классе TelegramBotHandler
             logging.exception(error_message)
         else:
             logging.debug("Цикл отработан без исключений")
