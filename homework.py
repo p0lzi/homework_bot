@@ -46,12 +46,15 @@ def send_message(bot, message):
         logging.info("Успешная отправка сообщения в Telegram.")
 
 
-def get_api_answer(current_timestamp):
+def get_api_answer(some_timestamp):
     """Makes a request to the only endpoint of the API service."""
+    timestamp_minus_10 = int(time.time()) - 60 * 10
+    from_date = (timestamp_minus_10 if some_timestamp < timestamp_minus_10
+                 else timestamp_minus_10)
     request_kwargs = {'url': ENDPOINT,
                       'headers': HEADERS,
                       'params': {
-                          'from_date': current_timestamp or int(time.time())
+                          'from_date': from_date
                       }}
     logging.info(
         ("Запрос к API \nurl= {url}\nheaders= {headers}"
@@ -135,11 +138,12 @@ def main():
     if not check_tokens():
         sys.exit("Отсутствует обязательные переменные окружения.")
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
-    current_timestamp = int(time.time())
     prev_message = ''
+    timestamp_minus_10 = int(time.time()) - 10 * 60
     while True:
         try:
-            response = get_api_answer(current_timestamp)
+
+            response = get_api_answer(timestamp_minus_10)
             homeworks = check_response(response)
             if homeworks:
                 for homework in homeworks:
