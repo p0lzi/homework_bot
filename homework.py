@@ -8,8 +8,7 @@ import handlers
 import requests
 import telegram
 from exceptions import (
-    APIConnectionError, EmptyResponseFromAPI, IncorrectAnswerFromAPI,
-    TelegramConnectionError)
+    APIConnectionError, IncorrectAnswerFromAPI, TelegramConnectionError)
 from setting import PRACTICUM_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_TOKEN
 
 RETRY_TIME = 600
@@ -27,7 +26,7 @@ console_handler = logging.StreamHandler()
 file_handler = logging.FileHandler(
     filename='homework.log',
     mode='w',
-    encoding='utf-8'
+    encoding='cp1251'
 )
 telegram_handler = handlers.TelegramBotHandler()
 telegram_handler.setLevel(logging.ERROR)
@@ -41,6 +40,7 @@ logging.basicConfig(
 def send_message(bot, message):
     """Sends a message to the Telegram chat."""
     try:
+        logging.info("Отправка сообщения в Telegram.")
         bot.sendMessage(chat_id=TELEGRAM_CHAT_ID, text=message)
     except telegram.error.TelegramError:
         raise TelegramConnectionError("Сбой при отправке сообщений в Telegram")
@@ -55,18 +55,30 @@ def get_api_answer(current_timestamp):
                       'params': {
                           'from_date': current_timestamp or int(time.time())
                       }}
-    logging.info(f'Запрос к API {request_kwargs.get("url")}')
+    logging.info(
+        ("Запрос к API \nurl= {url}\nheaders= {headers}"
+         "\nparams= {params}").format(**request_kwargs)
+    )
     try:
         response = requests.get(**request_kwargs)
         if response.status_code != HTTPStatus.OK:
             raise IncorrectAnswerFromAPI(
-                f"Неверный ответ от API:\n{response.text}"
+                ("Неверный ответ от API:\nstatus_code= {status}\n"
+                 "status_text= {statusText}\ntext= {response.text}")
+                .format(
+                    status=response.status_code,
+                    status_text=response.reason,
+                    text=response.text
+                )
             )
         return response.json()
-    except Exception:
+    except Exception as error_message:
         raise APIConnectionError(
-            ("Ошибка подключение к API\nurl= {url}\nheaders= {headers}\n"
-             "params= {params}").format(**request_kwargs))
+            (
+                "Ошибка подключение к API\nerror= {error_message}\n"
+                "url= {url}\nheaders= {headers}\nparams= {params}")
+            .format(error_message, **request_kwargs)
+        )
 
 
 def check_response(response):
@@ -76,7 +88,7 @@ def check_response(response):
         raise TypeError("Ответ от API имеет некорректный тип.")
     homeworks = response.get('homeworks')
     if not homeworks:
-        raise EmptyResponseFromAPI(
+        raise KeyError(
             "Отсутствие ключа 'homeworks' или  в ответе API."
         )
     if not isinstance(homeworks, list):
@@ -105,25 +117,32 @@ def parse_status(homework):
 
 def check_tokens():
     """Checks the availability of environment variables."""
-    if all((TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, PRACTICUM_TOKEN)):
+    tokens = {
+        'TELEGRAM_TOKEN': TELEGRAM_TOKEN,
+        'TELEGRAM_CHAT_ID': TELEGRAM_CHAT_ID,
+        'PRACTICUM_TOKEN': PRACTICUM_TOKEN
+    }
+    if all(tokens.values()):
         return True
-    logging.critical("Отсутствует обязательные переменные окружения.")
+    for name_token, token in tokens.items():
+        if not token:
+            logging.critical(
+                "Отсутствует обязательная переменная окружения {name_token}."
+            )
     return False
 
 
 def main():
     """The main logic of the bot."""
-    if check_tokens():
-        bot = telegram.Bot(token=TELEGRAM_TOKEN)
-    else:
+    if not check_tokens():
         sys.exit("Отсутствует обязательные переменные окружения.")
+    bot = telegram.Bot(token=TELEGRAM_TOKEN)
     current_timestamp = int(time.time())
     # Решил использовать переменную str так, как на выходе функции
     # parse_status строка (подготовленное сообщение для отправки в Telegram)
     prev_message = ''
     while True:
         try:
-
             response = get_api_answer(current_timestamp)
             homeworks = check_response(response)
             if homeworks:
@@ -145,7 +164,6 @@ def main():
             # Проверка отправки повторных сообщений об ошибках в модуле
             # handlers в классе TelegramBotHandler
             logging.exception(error_message)
-            time.sleep(RETRY_TIME)
         else:
             logging.debug("Цикл отработан без исключений")
         finally:

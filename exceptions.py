@@ -7,9 +7,5 @@ class APIConnectionError(Exception):
     pass
 
 
-class EmptyResponseFromAPI(Exception):
-    pass
-
-
 class TelegramConnectionError(Exception):
     pass
